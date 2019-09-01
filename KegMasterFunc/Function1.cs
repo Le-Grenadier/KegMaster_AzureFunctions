@@ -59,7 +59,14 @@ namespace KegMasterFunc
             log.LogInformation($"C# IoT Hub trigger function processed a message: {Encoding.UTF8.GetString(message.Body.Array)}");
 
             var raw_obj = JObject.Parse(Encoding.UTF8.GetString(message.Body.Array)).Root;
-           
+
+            /* Validate request (Needs to specify Id */
+            var id_field = (string)raw_obj["Id"];
+            if( null == id_field )
+            {
+                log.LogError($"Operation Failed to specify 'Id'");
+                return;
+            }
             /* Id is a special case, as it is always required */
             id = (string)raw_obj["Id"].Value<string>();
             id = Regex.Replace( id, "\"", "");
@@ -78,6 +85,8 @@ namespace KegMasterFunc
                     if (null != j)
                     {
                         string v = j.Value<string>();
+                        v = Regex.Replace(v, "\"", "");
+
                         string val = $"[{e}] = {v} ";
 
                         vals = vals + comma + val;
