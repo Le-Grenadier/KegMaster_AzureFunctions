@@ -1,28 +1,35 @@
 using IoTHubTrigger = Microsoft.Azure.WebJobs.EventHubTriggerAttribute;
 
 using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Host;
+//using Microsoft.Azure.WebJobs.Host;
+using Microsoft.Azure.Devices;
 using Microsoft.Azure.EventHubs;
 using Microsoft.Extensions.Logging;
 
 using System;
-using System.Collections.Generic;
-using System.Threading;
+//using System.Collections.Generic;
+//using System.Threading;
 using System.Data.SqlClient;
 using System.Text;
 using System.Net.Http;
-using System.Diagnostics;
+//using System.Diagnostics;
 
-using Newtonsoft.Json;
+//using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
-using System.Data;
+using System.Collections.Generic;
+using Newtonsoft.Json;
+//using System.Data;
+//using System.Net;
+//using System.Net.Http.Formatting;
+//using Microsoft.Rest;
 
 namespace KegMasterFunc
 {
     public static class Function1
     {
+        static ServiceClient serviceClient;
         private static HttpClient client = new HttpClient();
         private static readonly string[] kegItemFields =
         {
@@ -49,39 +56,111 @@ namespace KegMasterFunc
             "Deleted"
         };
 
-
         [FunctionName("Function1")]
+        [return: Blob("output-container/{id}")]
         public static async Task Run([IoTHubTrigger("messages/events", Connection = "iothub_endpoint")]EventData message, ILogger log)
         {
-            string id = "";
             var str = Environment.GetEnvironmentVariable("sqldb_connection");
 
             log.LogInformation($"C# IoT Hub trigger function processed a message: {Encoding.UTF8.GetString(message.Body.Array)}");
 
             var raw_obj = JObject.Parse(Encoding.UTF8.GetString(message.Body.Array)).Root;
 
-            /* Validate request (Needs to specify Id */
+            /*-----------------------------------------------------------------
+             If 'Id' present - a row is being updated
+            -----------------------------------------------------------------*/
             var id_field = (string)raw_obj["Id"];
-            if( null == id_field )
+            if (id_field != null)
             {
-                log.LogError($"Operation Failed to specify 'Id'");
-                return;
+                await updateRow(str, raw_obj, log);
+            } else
+            {
+                log.LogError($"Operation Failed to specify 'Id' field");
             }
-            /* Id is a special case, as it is always required */
-            id = (string)raw_obj["Id"].Value<string>();
-            id = Regex.Replace( id, "\"", "");
 
-            log.LogInformation($"data: {id}");
-
-            using (SqlConnection conn = new SqlConnection(str))
+            /*-----------------------------------------------------------------
+             If 'RqId' present - a row is being requested
+            -----------------------------------------------------------------*/
+            var req_id = (string)raw_obj["ReqId"];
+            if (req_id != null)
             {
+                await getRow(str, raw_obj, log);
+            }
+            else
+            {
+                log.LogError($"Operation Failed to specify 'ReqId'");
+            }
+        }
+
+        private static async Task getRow(string conStr, JToken json, ILogger log)
+        {
+            using (SqlConnection conn = new SqlConnection(conStr))
+            {
+                string id = "";
+                string tap = "";
+                string ret = "";
+                var devStr = Environment.GetEnvironmentVariable("device_endpoint");
+                var serviceClient = ServiceClient.CreateFromConnectionString(devStr);
+                /* 
+                 * For now the request Id will be ignored, later this field will
+                 * be used to identify and return data only for the provided 
+                 * Keezer Id. Currently this isn't important since only one 
+                 * keezer is active. 
+                 * 
+                 * I feel like there's a better way to do this, but time is not
+                 * in favor of finding it atm. 
+                 */
+                id = (string)json["ReqId"].Value<string>();
+                id = Regex.Replace(id, "\"", "");
+                log.LogInformation($"ReqId: {id}");
+
+                tap = (string)json["TapNo"].Value<string>();
+                tap = tap == null ? "" : Regex.Replace(tap, "\"", ""); ;
+
+                log.LogInformation($"TapNo: {tap}");
+
+                /* Update provided row if at least one Key-value has been provided */
+                if (tap.Length > 0 && tap != "")
+                {
+                    string query = $"SELECT * FROM KegItems WHERE TapNo='{tap}'";
+                    log.LogInformation($"Query: {query}");
+
+                    conn.Open();
+                    using (SqlCommand cmd = new SqlCommand(query, conn))
+                    {
+                        SqlDataReader row = await cmd.ExecuteReaderAsync();
+                        
+                        log.LogInformation($"Queried Rows Has Rows?: {row.HasRows}");
+                        IEnumerable< Dictionary<string, object>> e = Serialize(row);
+                        ret = JsonConvert.SerializeObject(e, Formatting.Indented);
+                    }
+                }
+
+
+                var commandMessage = new Message(Encoding.ASCII.GetBytes(ret));
+                /*
+                 * The device Id should be determined dynamically in the future.
+                 */
+                await serviceClient.SendAsync((string)"KegMaster", commandMessage);
+            }
+        }
+
+        private static async Task updateRow(string conStr, JToken json, ILogger log)
+        {
+            using (SqlConnection conn = new SqlConnection(conStr))
+            {
+                string id = "";
                 string vals = "";
                 string comma = "";
 
+                id = (string)json["Id"].Value<string>();
+                id = Regex.Replace(id, "\"", "");
+                log.LogInformation($"Row Id: {id}");
+
                 /* Build list of Key Value pairs to update */
-                foreach ( var e in kegItemFields )
+                foreach (var e in kegItemFields)
                 {
-                    JToken j = raw_obj[e];
+                    JToken j = json[e];
                     if (null != j)
                     {
                         string v = j.Value<string>();
@@ -110,5 +189,26 @@ namespace KegMasterFunc
                 }
             }
         }
+        public static IEnumerable<Dictionary<string, object>> Serialize(SqlDataReader reader)
+        {
+            var results = new List<Dictionary<string, object>>();
+            var cols = new List<string>();
+            for (var i = 0; i < reader.FieldCount; i++)
+                cols.Add(reader.GetName(i));
+
+            while (reader.Read())
+                results.Add(SerializeRow(cols, reader));
+
+            return results;
+        }
+        private static Dictionary<string, object> SerializeRow(IEnumerable<string> cols,
+                                                        SqlDataReader reader)
+        {
+            var result = new Dictionary<string, object>();
+            foreach (var col in cols)
+                result.Add(col, reader[col]);
+            return result;
+        }
     }
 }
+
