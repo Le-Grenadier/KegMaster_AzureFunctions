@@ -99,6 +99,7 @@ namespace KegMasterFunc
                 string id = "";
                 string tap = "";
                 string ret = "";
+                string qrySelect = "";
                 var devStr = Environment.GetEnvironmentVariable("device_endpoint");
                 var serviceClient = ServiceClient.CreateFromConnectionString(devStr);
                 /* 
@@ -116,13 +117,17 @@ namespace KegMasterFunc
 
                 tap = (string)json["TapNo"].Value<string>();
                 tap = tap == null ? "" : Regex.Replace(tap, "\"", ""); ;
-
                 log.LogInformation($"TapNo: {tap}");
 
+                qrySelect = (string)json["qrySelect"].Value<string>();
+                qrySelect = qrySelect == null ? "" : Regex.Replace(qrySelect, "\"", "");
+                log.LogInformation($"qrySelect: {qrySelect}");
+
                 /* Update provided row if at least one Key-value has been provided */
-                if (tap.Length > 0 && tap != "")
+                if ( (tap.Length > 0 && tap != "")
+                  && (qrySelect.Length > 0 && qrySelect != "") )
                 {
-                    string query = $"SELECT * FROM KegItems WHERE TapNo='{tap}'";
+                    string query = $"SELECT {qrySelect} FROM KegItems WHERE TapNo='{tap}' ORDER BY UpdatedAt DESC";
                     log.LogInformation($"Query: {query}");
 
                     conn.Open();
