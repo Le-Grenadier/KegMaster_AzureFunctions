@@ -29,7 +29,6 @@ namespace KegMasterFunc
 {
     public static class Function1
     {
-        static ServiceClient serviceClient;
         private static HttpClient client = new HttpClient();
         private static readonly string[] kegItemFields =
         {
@@ -92,7 +91,7 @@ namespace KegMasterFunc
             }
         }
 
-        private static async Task getRow(string conStr, JToken json, ILogger log)
+        public static async Task getRow(string conStr, JToken json, ILogger log)
         {
             using (SqlConnection conn = new SqlConnection(conStr))
             {
@@ -150,7 +149,7 @@ namespace KegMasterFunc
             }
         }
 
-        private static async Task updateRow(string conStr, JToken json, ILogger log)
+        public static async Task updateRow(string conStr, JToken json, ILogger log)
         {
             using (SqlConnection conn = new SqlConnection(conStr))
             {
@@ -171,7 +170,7 @@ namespace KegMasterFunc
                         string v = j.Value<string>();
                         v = Regex.Replace(v, "\"", "");
 
-                        string val = $"[{e}] = {v} ";
+                        string val = $"[{e}] = '{v}' ";
 
                         vals = vals + comma + val;
                         comma = ",";
