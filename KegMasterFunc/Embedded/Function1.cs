@@ -126,7 +126,8 @@ namespace KegMasterFunc
                 if ( (tap.Length > 0 && tap != "")
                   && (qrySelect.Length > 0 && qrySelect != "") )
                 {
-                    string query = $"SELECT {qrySelect} FROM KegItems WHERE TapNo='{tap}' ORDER BY UpdatedAt DESC";
+                    string qs = qrySelect.Contains("*") && !qrySelect.Contains("TapNo") ? qrySelect : qrySelect + ", TapNo";
+                    string query = $"SELECT {qs} FROM KegItems WHERE TapNo='{tap}' ORDER BY UpdatedAt DESC";
                     log.LogInformation($"Query: {query}");
 
                     conn.Open();
