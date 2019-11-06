@@ -20,6 +20,7 @@ using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using Microsoft.Azure.NotificationHubs;
 //using System.Data;
 //using System.Net;
 //using System.Net.Http.Formatting;
@@ -89,6 +90,20 @@ namespace KegMasterFunc
             {
                 log.LogError($"Operation Failed to specify 'ReqId'");
             }
+
+
+            /*-----------------------------------------------------------------
+             If 'Alerts' present - a send push notification
+            -----------------------------------------------------------------*/
+            var alerts = (string)raw_obj["Alerts"];
+            if (alerts != null)
+            {
+                await doPushNotify(str, raw_obj, log);
+            }
+            else
+            {
+                log.LogError($"Operation Failed to specify 'ReqId'");
+            }
         }
 
         public static async Task getRow(string conStr, JToken json, ILogger log)
@@ -149,7 +164,6 @@ namespace KegMasterFunc
                 await serviceClient.SendAsync((string)"KegMaster", commandMessage);
             }
         }
-
         public static async Task updateRow(string conStr, JToken json, ILogger log)
         {
             using (SqlConnection conn = new SqlConnection(conStr))
@@ -194,6 +208,51 @@ namespace KegMasterFunc
                 }
             }
         }
+        public static async Task doPushNotify(string conStr, JToken json, ILogger log)
+        {
+            log.LogInformation($"Processing Push Notification");
+
+            /*---------------------------------------------
+            Get connection to notification hub
+            ---------------------------------------------*/
+            var NotHubConStr = Environment.GetEnvironmentVariable("KegMaster_NotificationHubEndpoint");
+            NotificationHubClient hub = NotificationHubClient.CreateClientFromConnectionString(NotHubConStr, "KegMaster_NotificationHub");
+  
+            /*---------------------------------------------
+            Alert Text - Check validity again just for fun 
+            ---------------------------------------------*/
+            string alertText = json["Alerts"].ToString();
+            if(alertText == null) { return; }
+            log.LogInformation($"\tAlert Text: {alertText}");
+
+            /*---------------------------------------------
+            Determine the 'BadgeValue'
+             - This will determine the number in the 
+               'red balloon' above the iOS app icon.
+            ---------------------------------------------*/
+            string badgeValue = "1"; // TODO: Make this dynamic
+
+            /*---------------------------------------------
+            Send iOS alert
+            ---------------------------------------------*/
+            var iOSalert =
+            "{\"aps\":{\"alert\":\"" + alertText + "\", \"badge\":" + badgeValue + ", \"sound\":\"default\"},"
+            + "\"inAppMessage\":\"" + alertText + "\"}";
+            NotificationOutcome ret = await hub.SendAppleNativeNotificationAsync(iOSalert);
+            log.LogInformation($"\tApple Notification Outcome: {ret.ToString()}");
+
+            /*---------------------------------------------
+            Send Android alert 
+             - TODO: Impliment
+            ---------------------------------------------*/
+            /*
+            #error Add support for Android later
+            var androidAlert = "{\"data\":{\"message\": \"" + alertText + "\"}}";
+             NotificationOutcome ret = await hub.SendGcmNativeNotificationAsync(androidAlert);
+            log.LogInformation($"\tApple Notification Outcome: {ret.ToString()}");
+            */
+        }
+
         public static IEnumerable<Dictionary<string, object>> Serialize(SqlDataReader reader)
         {
             var results = new List<Dictionary<string, object>>();
@@ -206,8 +265,8 @@ namespace KegMasterFunc
 
             return results;
         }
-        private static Dictionary<string, object> SerializeRow(IEnumerable<string> cols,
-                                                        SqlDataReader reader)
+
+        private static Dictionary<string, object> SerializeRow(IEnumerable<string> cols, SqlDataReader reader)
         {
             var result = new Dictionary<string, object>();
             foreach (var col in cols)
