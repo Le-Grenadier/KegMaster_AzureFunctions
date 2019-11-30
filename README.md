@@ -1,0 +1,4 @@
+Written in C# using the .NET framework, Azure functions are the glue that binds the system together. Referring back to the Technical Overview, Azure Functions negotiate SQL transactions for both data Selections and Updates for all small transactions (the Azure App Service is used by the Xamarin App for selecting whole rows). Additional processing has been added for data transactions from the Xamarin Application, which will forward updates both to the SQL database and to the Azure Sphere. 
+
+Hooks have also been added for when the ‘Alerts’ field is updated. Whenever an update occurs to this field a notification will also be sent to the Xamarin Application. So far this is only used for when a becomes available based on the configured availability date. Though, any updates to the ‘Alert’ field by the Azure Sphere will be pushed as an alert, so adding new alerts should be relatively straight forward. 
+
